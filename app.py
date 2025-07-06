@@ -45,7 +45,7 @@ def prettify_rules(rules_df):
     return rules_df
 
 # ──────────────────────────────
-# 1️⃣ DESCRIPTIVE ANALYTICS
+# 📊 DESCRIPTIVE ANALYTICS
 # ──────────────────────────────
 if page == "📊 Descriptive Analytics":
     st.header("📊 Descriptive Portfolio Insights")
@@ -78,7 +78,7 @@ if page == "📊 Descriptive Analytics":
 
     c3, c4 = st.columns(2)
     with c3:
-        st.subheader("Portfolio allocation: Equity (%) vs Age")
+        st.subheader("Equity % vs Age")
         fig3 = px.scatter(view, x="Age", y="Portfolio Equity(%)", color="Risk Tolerance", opacity=0.6)
         st.plotly_chart(fig3, use_container_width=True)
     with c4:
@@ -86,18 +86,8 @@ if page == "📊 Descriptive Analytics":
         fig4 = px.histogram(view, x="Recommended Portfolio", color="Risk Tolerance", barmode="group")
         st.plotly_chart(fig4, use_container_width=True)
 
-    c5, c6 = st.columns(2)
-    with c5:
-        st.subheader("Portfolio Volatility by Portfolio Type")
-        fig5 = px.box(view, x="Recommended Portfolio", y="Portfolio Volatility")
-        st.plotly_chart(fig5, use_container_width=True)
-    with c6:
-        st.subheader("Historical Return (%) by Portfolio")
-        fig6 = px.box(view, x="Recommended Portfolio", y="Historical Return (%)")
-        st.plotly_chart(fig6, use_container_width=True)
-
 # ──────────────────────────────
-# 2️⃣ CLASSIFICATION
+# 🤖 CLASSIFICATION
 # ──────────────────────────────
 elif page == "🤖 Classification":
     st.header("🤖 Recommended Portfolio Classifier")
@@ -116,14 +106,9 @@ elif page == "🤖 Classification":
 
     scores, probas = [], {}
     for name, mdl in models.items():
-        if name == "KNN":
-            mdl.fit(X_train_sc, y_train)
-            preds = mdl.predict(X_test_sc)
-            probas[name] = mdl.predict_proba(X_test_sc)
-        else:
-            mdl.fit(X_train, y_train)
-            preds = mdl.predict(X_test)
-            probas[name] = mdl.predict_proba(X_test)
+        mdl.fit(X_train_sc if name == "KNN" else X_train, y_train)
+        preds = mdl.predict(X_test_sc if name == "KNN" else X_test)
+        probas[name] = mdl.predict_proba(X_test_sc if name == "KNN" else X_test)
         scores.append(score_row(y_test, preds, name))
 
     st.subheader("Metrics")
@@ -134,25 +119,11 @@ elif page == "🤖 Classification":
     y_pred = sel_model.predict(X_test_sc if choice == "KNN" else X_test)
     cm = confusion_matrix(y_test, y_pred, labels=y.unique())
     fig_cm, ax_cm = plt.subplots()
-    sns.heatmap(cm, annot=True, fmt="d", cmap="Blues",
-                xticklabels=y.unique(), yticklabels=y.unique(), ax=ax_cm)
+    sns.heatmap(cm, annot=True, fmt="d", cmap="Blues", xticklabels=y.unique(), yticklabels=y.unique(), ax=ax_cm)
     st.pyplot(fig_cm)
 
-    st.subheader("ROC curves (One-vs-Rest, for each class)")
-    y_bin = label_binarize(y_test, classes=y.unique())
-    fig_roc, ax_roc = plt.subplots()
-    for i, name in enumerate(models.keys()):
-        if hasattr(models[name], "predict_proba"):
-            prob = probas[name]
-            for j, class_lbl in enumerate(y.unique()):
-                if prob.shape[1] > 1:
-                    fpr, tpr, _ = roc_curve(y_bin[:, j], prob[:, j])
-                    ax_roc.plot(fpr, tpr, label=f"{name} - {class_lbl} (AUC={auc(fpr, tpr):.2f})")
-    ax_roc.plot([0, 1], [0, 1], linestyle="--", color="gray");  ax_roc.legend()
-    st.pyplot(fig_roc)
-
 # ──────────────────────────────
-# 3️⃣ CLUSTERING (K-PROTOTYPES)
+# 🎯 CLUSTERING (K-PROTOTYPES)
 # ──────────────────────────────
 elif page == "🎯 Clustering (K-Prototypes)":
     st.header("🎯 K-Prototypes Portfolio Segmentation")
@@ -162,39 +133,37 @@ elif page == "🎯 Clustering (K-Prototypes)":
                 "Portfolio RealEstate(%)", "Portfolio Crypto(%)", "Historical Return (%)", "Portfolio Volatility"]
     cat_cols = [c for c in df.columns if c not in num_cols + ["UserID", "Cluster"]]
 
-    df_clean = df.copy()
-    df_clean[num_cols] = df_clean[num_cols].fillna(df_clean[num_cols].mean())
-
+    df_clustering = df.copy()
+    df_clustering[num_cols] = df_clustering[num_cols].fillna(df_clustering[num_cols].mean())
     encoders = {}
     for col in cat_cols:
         le = LabelEncoder()
-        df_clean[col] = df_clean[col].fillna("Missing").astype(str)
-        df_clean[col] = le.fit_transform(df_clean[col])
+        df_clustering[col] = le.fit_transform(df_clustering[col].astype(str))
         encoders[col] = le
 
     scaler = StandardScaler()
-    X_num = scaler.fit_transform(df_clean[num_cols])
-    X_cat = df_clean[cat_cols].to_numpy()
+    X_num = scaler.fit_transform(df_clustering[num_cols])
+    X_cat = df_clustering[cat_cols].to_numpy()
     X_mix = np.hstack([X_num, X_cat])
     cat_idx = list(range(X_num.shape[1], X_mix.shape[1]))
 
     k = st.slider("k (clusters)", 2, 10, 4)
-    g = st.number_input("γ (numeric-vs-categorical weight – 0 = auto)", 0.0, 10.0, 0.0, 0.1)
-    γ = None if g == 0 else g
+    γ_input = st.number_input("γ (numeric vs categorical weight)", 0.0, 10.0, 0.0, 0.1)
+    γ = None if γ_input == 0.0 else γ_input
 
     kp = KPrototypes(n_clusters=k, init="Huang", n_init=10, gamma=γ, random_state=42)
     clusters = kp.fit_predict(X_mix, categorical=cat_idx)
     df["Cluster"] = clusters
     st.success(f"Clustering complete → {k} segments")
 
+    fig_cost, ax_cost = plt.subplots()
     costs = []
     for ki in range(2, 11):
-        km = KPrototypes(n_clusters=ki, n_init=5, random_state=42)
+        km = KPrototypes(n_clusters=ki, init="Huang", n_init=3, random_state=42)
         km.fit_predict(X_mix, categorical=cat_idx)
         costs.append(km.cost_)
-    fig_cost, ax_cost = plt.subplots()
-    ax_cost.plot(range(2, 11), costs, marker="o")
-    ax_cost.set(xlabel="k", ylabel="Cost", title="Cost curve")
+    ax_cost.plot(range(2, 11), costs, marker='o')
+    ax_cost.set(title="Cost vs Clusters", xlabel="k", ylabel="Cost")
     st.pyplot(fig_cost)
 
     persona_num = df.groupby("Cluster")[num_cols].mean().round(1)
@@ -203,39 +172,40 @@ elif page == "🎯 Clustering (K-Prototypes)":
     st.subheader("Cluster personas")
     st.dataframe(persona)
 
-    st.download_button("Download labelled data",
+    st.download_button("Download clustered data",
                        df.to_csv(index=False).encode("utf-8"),
                        "clustered_data.csv",
                        "text/csv")
 
 # ──────────────────────────────
-# 4️⃣ ASSOCIATION RULES
+# 🛒 ASSOCIATION RULES
 # ──────────────────────────────
 elif page == "🛒 Association Rules":
     st.header("🛒 Portfolio Allocation Associations (Apriori)")
     alloc_cols = ["Portfolio Equity(%)", "Portfolio Bonds(%)", "Portfolio Cash(%)",
                   "Portfolio RealEstate(%)", "Portfolio Crypto(%)"]
-    basket = (df[alloc_cols] > 10).astype(int)
+    basket = (df[alloc_cols] > 20).astype(int)
+
     min_sup  = st.slider("Min support",     0.01, 0.5, 0.05, 0.01)
     min_conf = st.slider("Min confidence",  0.1,  0.9, 0.6,  0.05)
     min_lift = st.slider("Min lift",        1.0,  5.0, 1.2,  0.1)
 
     if st.button("Run Apriori"):
-        freq = apriori(basket, min_support=min_sup, use_colnames=True)
-        if freq.empty:
-            st.warning("No itemsets — lower support.")
+        frequent_itemsets = apriori(basket, min_support=min_sup, use_colnames=True)
+        if frequent_itemsets.empty:
+            st.warning("No itemsets — try lowering support.")
         else:
-            rules = association_rules(freq, metric="confidence", min_threshold=min_conf)
+            rules = association_rules(frequent_itemsets, metric="confidence", min_threshold=min_conf)
             rules = rules[rules["lift"] >= min_lift]
             if rules.empty:
                 st.warning("No rules at these thresholds.")
             else:
                 rules = prettify_rules(rules).sort_values("lift", ascending=False).head(10)
                 st.dataframe(rules[["antecedents", "consequents", "support", "confidence", "lift"]]
-                             .style.format({"support":"{:.3f}", "confidence":"{:.2f}", "lift":"{:.2f}"}))
+                             .style.format({"support": "{:.3f}", "confidence": "{:.2f}", "lift": "{:.2f}"}))
 
 # ──────────────────────────────
-# 5️⃣ REGRESSION
+# 📈 REGRESSION
 # ──────────────────────────────
 else:
     st.header("📈 Regression – Predict Historical Return (%) / Volatility")
@@ -250,7 +220,8 @@ else:
             "Decision Tree": DecisionTreeRegressor(max_depth=6, random_state=42)}
     out = []
     for name, r in regs.items():
-        r.fit(X_tr, y_tr);  preds = r.predict(X_te)
+        r.fit(X_tr, y_tr)
+        preds = r.predict(X_te)
         out.append({"Model": name,
                     "R2":   round(r.score(X_te, y_te), 3),
                     "RMSE": int(np.sqrt(((y_te - preds) ** 2).mean())),
