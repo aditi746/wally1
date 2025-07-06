@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import plotly.express as px
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler, label_binarize
+from sklearn.preprocessing import StandardScaler, label_binarize, LabelEncoder
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix, roc_curve, auc
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
@@ -14,9 +14,6 @@ from sklearn.linear_model import LinearRegression, Ridge, Lasso
 from kmodes.kprototypes import KPrototypes
 from mlxtend.frequent_patterns import apriori, association_rules
 
-# ───────────────────────────────────────────────────────────────
-# PAGE CONFIG & DATA
-# ───────────────────────────────────────────────────────────────
 st.set_page_config(page_title="Portfolio Analytics Dashboard", page_icon="📈", layout="wide")
 
 @st.cache_data
@@ -25,9 +22,6 @@ def load_data(xlsx_path: str = "IA_PBL_DA_MJ25GF015 (2).xlsx", sheet: str = "str
 
 df = load_data()
 
-# ───────────────────────────────────────────────────────────────
-# SIDEBAR NAVIGATION
-# ───────────────────────────────────────────────────────────────
 st.sidebar.title("📂 Modules")
 page = st.sidebar.radio(
     "Choose analytics module",
@@ -38,9 +32,6 @@ page = st.sidebar.radio(
      "📈 Regression"]
 )
 
-# ───────────────────────────────────────────────────────────────
-# HELPER UTILITIES
-# ───────────────────────────────────────────────────────────────
 def score_row(y_true, y_pred, name):
     return {"Model": name,
             "Accuracy": round(accuracy_score(y_true, y_pred), 3),
@@ -53,9 +44,9 @@ def prettify_rules(rules_df):
         rules_df[c] = rules_df[c].apply(lambda x: ", ".join(sorted(list(x))))
     return rules_df
 
-# ───────────────────────────────────────────────────────────────
-# 1️⃣  DESCRIPTIVE
-# ───────────────────────────────────────────────────────────────
+# ──────────────────────────────
+# 1️⃣ DESCRIPTIVE ANALYTICS
+# ──────────────────────────────
 if page == "📊 Descriptive Analytics":
     st.header("📊 Descriptive Portfolio Insights")
     with st.sidebar.expander("Filters", True):
@@ -105,9 +96,9 @@ if page == "📊 Descriptive Analytics":
         fig6 = px.box(view, x="Recommended Portfolio", y="Historical Return (%)")
         st.plotly_chart(fig6, use_container_width=True)
 
-# ───────────────────────────────────────────────────────────────
-# 2️⃣  CLASSIFICATION
-# ───────────────────────────────────────────────────────────────
+# ──────────────────────────────
+# 2️⃣ CLASSIFICATION
+# ──────────────────────────────
 elif page == "🤖 Classification":
     st.header("🤖 Recommended Portfolio Classifier")
     y = df["Recommended Portfolio"]
@@ -160,9 +151,9 @@ elif page == "🤖 Classification":
     ax_roc.plot([0, 1], [0, 1], linestyle="--", color="gray");  ax_roc.legend()
     st.pyplot(fig_roc)
 
-# ───────────────────────────────────────────────────────────────
-# 3️⃣  HYBRID CLUSTERING (K-PROTOTYPES)
-# ───────────────────────────────────────────────────────────────
+# ──────────────────────────────
+# 3️⃣ CLUSTERING (K-PROTOTYPES)
+# ──────────────────────────────
 elif page == "🎯 Clustering (K-Prototypes)":
     st.header("🎯 K-Prototypes Portfolio Segmentation")
 
@@ -173,20 +164,25 @@ elif page == "🎯 Clustering (K-Prototypes)":
 
     df_clean = df.copy()
     df_clean[num_cols] = df_clean[num_cols].fillna(df_clean[num_cols].mean())
-    for c in cat_cols:
-        df_clean[c] = df_clean[c].fillna("Missing").astype(str)
 
-    scaler   = StandardScaler()
-    X_num    = scaler.fit_transform(df_clean[num_cols])
-    X_cat    = df_clean[cat_cols].to_numpy()
-    X_mix    = np.hstack([X_num, X_cat])
-    cat_idx  = list(range(X_num.shape[1], X_mix.shape[1]))
+    encoders = {}
+    for col in cat_cols:
+        le = LabelEncoder()
+        df_clean[col] = df_clean[col].fillna("Missing").astype(str)
+        df_clean[col] = le.fit_transform(df_clean[col])
+        encoders[col] = le
 
-    k  = st.slider("k (clusters)", 2, 10, 4)
-    g  = st.number_input("γ (numeric-vs-categorical weight – 0 = auto)", 0.0, 10.0, 0.0, 0.1)
-    γ  = None if g == 0 else g
+    scaler = StandardScaler()
+    X_num = scaler.fit_transform(df_clean[num_cols])
+    X_cat = df_clean[cat_cols].to_numpy()
+    X_mix = np.hstack([X_num, X_cat])
+    cat_idx = list(range(X_num.shape[1], X_mix.shape[1]))
 
-    kp = KPrototypes(n_clusters=k, init="Huang", n_init=10, gamma=γ, random_state=42, verbose=0)
+    k = st.slider("k (clusters)", 2, 10, 4)
+    g = st.number_input("γ (numeric-vs-categorical weight – 0 = auto)", 0.0, 10.0, 0.0, 0.1)
+    γ = None if g == 0 else g
+
+    kp = KPrototypes(n_clusters=k, init="Huang", n_init=10, gamma=γ, random_state=42)
     clusters = kp.fit_predict(X_mix, categorical=cat_idx)
     df["Cluster"] = clusters
     st.success(f"Clustering complete → {k} segments")
@@ -212,9 +208,9 @@ elif page == "🎯 Clustering (K-Prototypes)":
                        "clustered_data.csv",
                        "text/csv")
 
-# ───────────────────────────────────────────────────────────────
-# 4️⃣  ASSOCIATION RULES
-# ───────────────────────────────────────────────────────────────
+# ──────────────────────────────
+# 4️⃣ ASSOCIATION RULES
+# ──────────────────────────────
 elif page == "🛒 Association Rules":
     st.header("🛒 Portfolio Allocation Associations (Apriori)")
     alloc_cols = ["Portfolio Equity(%)", "Portfolio Bonds(%)", "Portfolio Cash(%)",
@@ -238,9 +234,9 @@ elif page == "🛒 Association Rules":
                 st.dataframe(rules[["antecedents", "consequents", "support", "confidence", "lift"]]
                              .style.format({"support":"{:.3f}", "confidence":"{:.2f}", "lift":"{:.2f}"}))
 
-# ───────────────────────────────────────────────────────────────
-# 5️⃣  REGRESSION
-# ───────────────────────────────────────────────────────────────
+# ──────────────────────────────
+# 5️⃣ REGRESSION
+# ──────────────────────────────
 else:
     st.header("📈 Regression – Predict Historical Return (%) / Volatility")
     target = st.selectbox("Choose target variable", ["Historical Return (%)", "Portfolio Volatility"])
